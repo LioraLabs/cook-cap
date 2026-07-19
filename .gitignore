@@ -79,3 +79,7 @@ analysis/
 analysis/plans/
 .ralphy
 tmp/
+
+# cook (build system port — cook_modules is the installed module tree, .cook is local state)
+/cook_modules/
+/.cook/

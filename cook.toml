@@ -1,0 +1,7 @@
+# cap-cook — Cap with the JS pipeline driven by cook instead of Turborepo.
+# turbo.json is kept in-tree for side-by-side comparison.
+[registry]
+indexes = ["https://rocks.usecook.com"]
+
+[modules]
+cook_pnpm = "0.4.0-1"

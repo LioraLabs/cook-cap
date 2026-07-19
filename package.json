@@ -61,6 +61,14 @@
 		"typescript": "^5.8.3"
 	},
 	"pnpm": {
+		"onlyBuiltDependencies": [
+			"@parcel/watcher",
+			"@swc/core",
+			"esbuild",
+			"sharp",
+			"unrs-resolver",
+			"workerd"
+		],
 		"overrides": {
 			"react-native-worklets": "0.7.4"
 		},

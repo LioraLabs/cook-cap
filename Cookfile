@@ -1,0 +1,84 @@
+# Cap under cook — Turborepo replaced by cook_pnpm (turbo.json kept in-tree
+# for side-by-side reading).
+#
+#   ── build ────────────────────────────────────────────────────────────────
+#   cook build            everything Linux-buildable: JS workspace + rust bins
+#   cook "@cap/web:build"     Next.js app  -> apps/web/.next        (~38s cold)
+#   cook "@cap/desktop:build" vinxi frontend -> apps/desktop/.output (~40s cold)
+#   cook install          pnpm install --frozen-lockfile (cached by lockfile)
+#   cook rust-bins        cargo build of the Linux-real binaries -> target/debug
+#
+#   ── verify ───────────────────────────────────────────────────────────────
+#   cook test             JS checks (vitest/tsc, minted) + rust checks below
+#   cook rust-check       cargo check over the honest Linux subset (26/48
+#                         crates; the other 22 are blocked UPSTREAM on
+#                         ffmpeg-sys-next 7.x vs host ffmpeg 8 — avfft.h gone)
+#   cook rust-test        cargo test --lib on the pure crates (78 tests;
+#                         --lib is mandatory: their doctests are broken)
+#
+# Env: apps builds read the dummy root .env (CI-style values; also copied to
+# apps/desktop/.env — vinxi loads the app-local file). .env rides as a
+# workspace-level input on every minted task (turbo globalDependencies).
+#
+# Known upstream breakage (fails under plain pnpm/turbo too, excluded from
+# the aggregate): @cap/sdk-recorder build+typecheck (TS2345 in src/index.ts).
+
+use cook_pnpm
+
+register
+    cook_pnpm.workspace({
+        packages = { "packages/*", "apps/chrome-extension", "apps/web", "apps/desktop" },
+        node     = ">=20",
+        pm       = "pnpm@10",
+        inputs   = { ".env" },
+        install  = "install",
+        tasks    = {
+            build = { outputs = { "dist/**" }, depends_on = { "^build" } },
+            -- per-package overrides (turbo "<pkg>#<task>"); turbo's
+            -- "!.next/cache/**" exclusion is droppable here: turbopack's
+            -- persistent cache is dev-only, .next/cache is ~656K.
+            -- env keys: shell-env drift on the vars the app schemas
+            -- validate (@cap/env zod, VITE_*) folds into the cache key —
+            -- turbo's globalEnv "*" done declaratively.
+            ["@cap/web#build"] = {
+                outputs    = { ".next/**" },
+                depends_on = { "^build" },
+                env = { "NODE_ENV", "DATABASE_URL", "WEB_URL", "NEXT_PUBLIC_WEB_URL",
+                        "NEXTAUTH_URL", "NEXTAUTH_SECRET", "CAP_AWS_BUCKET", "CAP_AWS_REGION" },
+            },
+            ["@cap/desktop#build"] = {
+                outputs    = { ".output/**" },
+                depends_on = { "^build" },
+                env = { "VITE_ENVIRONMENT", "VITE_SERVER_URL", "VITE_POSTHOG_KEY",
+                        "VITE_POSTHOG_HOST", "VITE_VERCEL_AUTOMATION_BYPASS_SECRET" },
+            },
+        },
+    })
+
+# ── Rust half (invisible to turbo; cook folds it into the same graph) ──────
+# Coarse ingredients: crates/**/* over-invalidates on edits to the 22
+# ffmpeg-walled crates, but keeps the recipe honest and mechanical.
+
+recipe rust-check
+    ingredients "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/**/*"
+    test {
+        cargo check -q -p cap-api -p cap-automation -p cap-camera -p cap-camera-avfoundation -p cap-camera-directshow -p cap-camera-effects -p cap-camera-mediafoundation -p cap-camera-windows -p cap-cli-install -p cap-cursor-capture -p cap-cursor-info -p cap-d3d-adapter -p cap-enc-gif -p cap-fail -p cap-flags -p cap-gpu-converters -p cap-mediafoundation-utils -p cap-muxer-protocol -p cap-project -p cap-rendering-skia -p cap-timestamp -p cap-utils -p scap-cpal -p scap-screencapturekit -p scap-targets -p workspace-hack
+    }
+
+recipe rust-test
+    ingredients "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/project/**/*" "crates/utils/**/*" "crates/timestamp/**/*" "crates/cap-muxer-protocol/**/*" "crates/cursor-info/**/*"
+    test { cargo test -q --lib -p cap-project -p cap-utils -p cap-timestamp -p cap-muxer-protocol }
+
+recipe rust-bins
+    ingredients "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/**/*"
+    cook "target/debug/scap-targets"
+         "target/debug/cap-cursor-capture"
+         "target/debug/test-skia"
+         "target/debug/test-background" {
+        cargo build -q -p scap-targets -p cap-cursor-capture -p cap-rendering-skia
+    }
+
+# ── Aggregates ─────────────────────────────────────────────────────────────
+# JS leaf-most packages pull the rest via ^build edges; sdk-recorder is
+# upstream-broken and skipped.
+recipe build: "@cap/web-backend:build" "@cap/database:build" "@cap/sdk-embed:build" "@cap/chrome-extension:build" "@cap/web:build" "@cap/desktop:build" rust-bins

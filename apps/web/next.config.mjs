@@ -18,6 +18,12 @@ const ffmpegTracingIncludes = [
 
 const nextConfig = {
 	reactStrictMode: true,
+	// Pin the workspace root: a stray lockfile above the repo makes
+	// Turbopack's root inference pick the wrong directory, which breaks
+	// module resolution entirely (11 "Module not found" errors).
+	turbopack: {
+		root: path.resolve(import.meta.dirname, "../.."),
+	},
 	serverExternalPackages: ["ffmpeg-static", "prettier"],
 	outputFileTracingIncludes: {
 		"/.well-known/workflow/v1/step": ffmpegTracingIncludes,
