@@ -31,6 +31,10 @@ register
         node     = ">=20",
         pm       = "pnpm@10",
         inputs   = { ".env" },
+        -- next build rewrites this Vercel workflow manifest INTO the app
+        -- source dir on every run; keying on it made web:build re-run once
+        -- after any foreign next build.
+        exclude_inputs = { "apps/web/app/.well-known/workflow/**" },
         install  = "install",
         tasks    = {
             build = { outputs = { "dist/**" }, depends_on = { "^build" } },
