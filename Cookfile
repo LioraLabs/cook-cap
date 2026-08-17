@@ -25,56 +25,63 @@
 
 use cook_pnpm
 
-register
-    cook_pnpm.workspace({
-        packages = { "packages/*", "apps/chrome-extension", "apps/web", "apps/desktop" },
-        node     = ">=20",
-        pm       = "pnpm@10",
-        inputs   = { ".env" },
-        -- next build rewrites this Vercel workflow manifest INTO the app
-        -- source dir on every run; keying on it made web:build re-run once
-        -- after any foreign next build.
-        exclude_inputs = { "apps/web/app/.well-known/workflow/**" },
-        install  = "install",
-        tasks    = {
-            build = { outputs = { "dist/**" }, depends_on = { "^build" } },
-            -- per-package overrides (turbo "<pkg>#<task>"); turbo's
-            -- "!.next/cache/**" exclusion is droppable here: turbopack's
-            -- persistent cache is dev-only, .next/cache is ~656K.
-            -- env keys: shell-env drift on the vars the app schemas
-            -- validate (@cap/env zod, VITE_*) folds into the cache key —
-            -- turbo's globalEnv "*" done declaratively.
-            ["@cap/web#build"] = {
-                outputs    = { ".next/**" },
-                depends_on = { "^build" },
-                env = { "NODE_ENV", "DATABASE_URL", "WEB_URL", "NEXT_PUBLIC_WEB_URL",
-                        "NEXTAUTH_URL", "NEXTAUTH_SECRET", "CAP_AWS_BUCKET", "CAP_AWS_REGION" },
-            },
-            ["@cap/desktop#build"] = {
-                outputs    = { ".output/**" },
-                depends_on = { "^build" },
-                env = { "VITE_ENVIRONMENT", "VITE_SERVER_URL", "VITE_POSTHOG_KEY",
-                        "VITE_POSTHOG_HOST", "VITE_VERCEL_AUTOMATION_BYPASS_SECRET" },
-            },
+cook_pnpm.workspace({
+    packages = { "packages/*", "apps/chrome-extension", "apps/web", "apps/desktop" },
+    node     = ">=20",
+    pm       = "pnpm@10",
+    inputs   = { ".env" },
+    -- next build rewrites this Vercel workflow manifest INTO the app
+    -- source dir on every run; keying on it made web:build re-run once
+    -- after any foreign next build.
+    exclude_inputs = { "apps/web/app/.well-known/workflow/**" },
+    install  = "install",
+    tasks    = {
+        build = { outputs = { "dist/**" }, depends_on = { "^build" } },
+        -- per-package overrides (turbo "<pkg>#<task>"); turbo's
+        -- "!.next/cache/**" exclusion is droppable here: turbopack's
+        -- persistent cache is dev-only, .next/cache is ~656K.
+        -- env keys: shell-env drift on the vars the app schemas
+        -- validate (@cap/env zod, VITE_*) folds into the cache key —
+        -- turbo's globalEnv "*" done declaratively.
+        ["@cap/web#build"] = {
+            outputs    = { ".next/**" },
+            depends_on = { "^build" },
+            env = { "NODE_ENV", "DATABASE_URL", "WEB_URL", "NEXT_PUBLIC_WEB_URL",
+                    "NEXTAUTH_URL", "NEXTAUTH_SECRET", "CAP_AWS_BUCKET", "CAP_AWS_REGION" },
         },
-    })
+        ["@cap/desktop#build"] = {
+            outputs    = { ".output/**" },
+            depends_on = { "^build" },
+            env = { "VITE_ENVIRONMENT", "VITE_SERVER_URL", "VITE_POSTHOG_KEY",
+                    "VITE_POSTHOG_HOST", "VITE_VERCEL_AUTOMATION_BYPASS_SECRET" },
+        },
+    },
+})
 
 # ── Rust half (invisible to turbo; cook folds it into the same graph) ──────
-# Coarse ingredients: crates/**/* over-invalidates on edits to the 22
-# ffmpeg-walled crates, but keeps the recipe honest and mechanical.
+# Coarse manifests: crates/**/* over-invalidates on edits to the 22
+# ffmpeg-walled crates, but keeps the recipes honest and mechanical.
+
+files rust:sources
+    "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/**/*"
+
+files rust:test_sources
+    "Cargo.toml" "Cargo.lock" "rust-toolchain.toml"
+    "crates/project/**/*" "crates/utils/**/*" "crates/timestamp/**/*"
+    "crates/cap-muxer-protocol/**/*" "crates/cursor-info/**/*"
 
 recipe rust-check
-    ingredients "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/**/*"
+    seal rust:sources
     test {
         cargo check -q -p cap-api -p cap-automation -p cap-camera -p cap-camera-avfoundation -p cap-camera-directshow -p cap-camera-effects -p cap-camera-mediafoundation -p cap-camera-windows -p cap-cli-install -p cap-cursor-capture -p cap-cursor-info -p cap-d3d-adapter -p cap-enc-gif -p cap-fail -p cap-flags -p cap-gpu-converters -p cap-mediafoundation-utils -p cap-muxer-protocol -p cap-project -p cap-rendering-skia -p cap-timestamp -p cap-utils -p scap-cpal -p scap-screencapturekit -p scap-targets -p workspace-hack
     }
 
 recipe rust-test
-    ingredients "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/project/**/*" "crates/utils/**/*" "crates/timestamp/**/*" "crates/cap-muxer-protocol/**/*" "crates/cursor-info/**/*"
+    seal rust:test_sources
     test { cargo test -q --lib -p cap-project -p cap-utils -p cap-timestamp -p cap-muxer-protocol }
 
 recipe rust-bins
-    ingredients "Cargo.toml" "Cargo.lock" "rust-toolchain.toml" "crates/**/*"
+    seal rust:sources
     cook "target/debug/scap-targets"
          "target/debug/cap-cursor-capture"
          "target/debug/test-skia"
