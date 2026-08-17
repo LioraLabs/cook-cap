@@ -4,4 +4,4 @@
 indexes = ["https://rocks.usecook.com"]
 
 [modules]
-cook_pnpm = "0.8.0-1"
+cook_pnpm = "0.9.0-1"
